@@ -1,0 +1,23 @@
+[project]
+name = "redteam-check"
+version = "0.1.0"
+description = "Black-box red-team checks for LLM chat endpoints: prompt leaks, injection, unsafe links, data exposure."
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[project.scripts]
+redteam-check = "redteam_check.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+redteam_check = ["packs/*.jsonl"]
+
+[tool.ruff]
+line-length = 120
