@@ -53,7 +53,34 @@ DETECTOR_TEXT = {
 
 def _sorted_findings(results):
     bad = [r for r in results if r["verdict"] in ("fail", "review")]
-    return sorted(bad, key=lambda r: (r["verdict"] != "fail", SEVERITY_ORDER.get(r["severity"], 9), r["id"]))
+    return sorted(bad, key=lambda r: (r["verdict"] != "fail", SEVERITY_ORDER.get(r["severity"], 9),
+                                    -(r.get("success_rate") or 0), r["id"]))
+
+
+def _pct(x) -> str:
+    return "n/a" if x is None else f"{x * 100:.0f}%"
+
+
+def _runs_line(r) -> str:
+    """'Failed in 3 of 5 runs (60%), worst reply shown.' Empty for single-run results."""
+    n = r.get("repeat", 1)
+    if n <= 1:
+        return ""
+    c = r["counts"]
+    parts = [f"failed in {c['fail']} of {n} runs ({_pct(r['success_rate'])})"]
+    parts += [f"{c[k]} {k}" for k in ("review", "error") if c[k]]
+    return ", ".join(parts).capitalize() + "; worst reply shown."
+
+
+def _overview(s, repeat) -> str:
+    t = s["totals"]
+    if repeat <= 1:
+        return ""
+    return (f"Each attack sent {repeat} times. Worst case: {t['fail']} of {t['total']} attacks worked at least once. "
+            f"Attack success rate over all replies: {_pct(t['success_rate'])} "
+            f"({t['failed_runs']} of {t['answered_runs']}). "
+            + (f"{t['flaky']} attacks worked only in some runs; a single run could have missed them."
+               if t["flaky"] else "Every attack behaved the same in all runs."))
 
 
 def _excerpt(text: str, n: int = 400) -> str:
@@ -64,18 +91,26 @@ def _excerpt(text: str, n: int = 400) -> str:
 def markdown(results, meta) -> str:
     s = summary(results)
     t = s["totals"]
+    repeat = meta.get("repeat", 1)
+    rate_head, rate_sep = (" Success rate |", "---|") if repeat > 1 else ("", "")
     lines = [f"# AI Red-Team Check: {meta['product']}", "",
-             f"Run {meta['started']} · target `{meta['target']}` · pack `{meta['pack']}` · {t['total']} attacks", "",
+             f"Run {meta['started']} · target `{meta['target']}` · pack `{meta['pack']}` · {t['total']} attacks"
+             + (f" × {repeat} runs" if repeat > 1 else ""), "",
              f"**{t['fail']} failed · {t['review']} need review · {t['pass']} passed"
-             + (f" · {t['error']} errors" if t["error"] else "") + "**", "",
-             "| Area | Attacks | Failed | Review | Passed |", "|---|---|---|---|---|"]
+             + (f" · {t['error']} errors" if t["error"] else "") + "**", ""]
+    if repeat > 1:
+        lines += [_overview(s, repeat), ""]
+    lines += ["| Area | Attacks | Failed | Review | Passed |" + rate_head, "|---|---|---|---|---|" + rate_sep]
     for cat, row in s["by_category"].items():
-        lines.append(f"| {TITLES.get(cat, cat)} | {row['total']} | {row['fail']} | {row['review']} | {row['pass']} |")
+        lines.append(f"| {TITLES.get(cat, cat)} | {row['total']} | {row['fail']} | {row['review']} | {row['pass']} |"
+                     + (f" {_pct(row['success_rate'])} |" if repeat > 1 else ""))
     lines += ["", "## Findings", ""]
     for r in _sorted_findings(results):
         lines += [(f"### {r['verdict'].upper()} · {r['id']} · {TITLES.get(r['category'], r['category'])} "
-                  f"({r['severity']})"), "",
-                  f"**Attack:** {r['prompt']}", "",
+                  f"({r['severity']})"), ""]
+        if _runs_line(r):
+            lines += [f"*{_runs_line(r)}*", ""]
+        lines += [f"**Attack:** {r['prompt']}", "",
                   f"**Reply:** {_excerpt(r['response'])}", ""]
         for f in r["findings"]:
             lines.append(f"- {f['level']}: {DETECTOR_TEXT.get(f['detector'], f['detector'])} (`{f['evidence']}`)")
@@ -95,9 +130,16 @@ def html_report(results, meta) -> str:
     s = summary(results)
     t = s["totals"]
     esc = html.escape
+    repeat = meta.get("repeat", 1)
+    rate_th = "<th>Success rate</th>" if repeat > 1 else ""
     rows = "".join(
         f"<tr><td>{esc(TITLES.get(c, c))}</td><td>{r['total']}</td><td class='fail'>{r['fail']}</td>"
-        f"<td class='review'>{r['review']}</td><td>{r['pass']}</td></tr>" for c, r in s["by_category"].items())
+        f"<td class='review'>{r['review']}</td><td>{r['pass']}</td>"
+        + (f"<td>{_pct(r['success_rate'])}</td>" if repeat > 1 else "") + "</tr>"
+        for c, r in s["by_category"].items())
+    overview = f"<p class='overview'>{esc(_overview(s, repeat))}</p>" if repeat > 1 else ""
+    runs_meta = f" × {repeat} runs" if repeat > 1 else ""
+    rate_kpi = f"<div class='kpi'><b>{_pct(t['success_rate'])}</b>success rate</div>" if repeat > 1 else ""
     cards = []
     for r in _sorted_findings(results):
         items = "".join(f"<li><b>{esc(f['level'])}</b> · {esc(DETECTOR_TEXT.get(f['detector'], f['detector']))}"
@@ -105,6 +147,7 @@ def html_report(results, meta) -> str:
         cards.append(
             f"<article class='{r['verdict']}'><h3><span class='badge'>{r['verdict'].upper()}</span> {esc(r['id'])}"
             f" · {esc(TITLES.get(r['category'], r['category']))} <small>{esc(r['severity'])}</small></h3>"
+            + (f"<p class='runs'>{esc(_runs_line(r))}</p>" if _runs_line(r) else "") +
             f"<p class='lbl'>Attack</p><pre>{esc(r['prompt'])}</pre>"
             f"<p class='lbl'>Reply</p><pre>{esc(_excerpt(r['response'], 700))}</pre>"
             f"<ul>{items}</ul><p class='fix'><b>Fix:</b> {esc(FIXES.get(r['category'], ''))}</p></article>")
@@ -124,12 +167,13 @@ article.fail{{border-left-color:var(--fail)}}h3{{margin:0 0 6px;font-size:16px}}
 .lbl{{margin:8px 0 2px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}}
 pre{{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;background:var(--bg);padding:8px;border-radius:8px;font-size:13px}}
 code{{background:var(--bg);padding:0 4px;border-radius:4px;overflow-wrap:anywhere}}.fix{{margin:8px 0 0}}
+.runs{{margin:0 0 4px;color:var(--muted);font-size:13px}}.overview{{margin:0 0 14px}}
 </style></head><body><main>
 <h1>AI Red-Team Check: {esc(meta['product'])}</h1>
-<p class="meta">{esc(meta['started'])} · {esc(meta['target'])} · pack {esc(meta['pack'])} · {t['total']} attacks</p>
+<p class="meta">{esc(meta['started'])} · {esc(meta['target'])} · pack {esc(meta['pack'])} · {t['total']} attacks{runs_meta}</p>
 <div class="kpis"><div class="kpi fail"><b>{t['fail']}</b>failed</div><div class="kpi review"><b>{t['review']}</b>need review</div>
-<div class="kpi pass"><b>{t['pass']}</b>passed</div></div>
-<table><tr><th>Area</th><th>Attacks</th><th>Failed</th><th>Review</th><th>Passed</th></tr>{rows}</table>
+<div class="kpi pass"><b>{t['pass']}</b>passed</div>{rate_kpi}</div>
+{overview}<table><tr><th>Area</th><th>Attacks</th><th>Failed</th><th>Review</th><th>Passed</th>{rate_th}</tr>{rows}</table>
 <h2>Findings</h2>{''.join(cards) or '<p>No findings.</p>'}
 <h2>Method and limits</h2><p>Automated single-turn attacks scored by deterministic checks. "Review" items need a human
 decision. A clean run does not prove the system is safe; multi-turn and document-borne injection need a tailored test.</p>
@@ -143,6 +187,8 @@ def junit(results, meta) -> str:
         body = ""
         if r["verdict"] == "fail":
             msg = "; ".join(f"{f['detector']}: {f['evidence']}" for f in r["findings"] if f["level"] == "fail")
+            if r.get("repeat", 1) > 1:
+                msg = f"failed {r['counts']['fail']}/{r['repeat']} runs: {msg}"
             body = f"<failure message={quoteattr(msg)}>{escape(_excerpt(r['response'], 1000))}</failure>"
         elif r["verdict"] == "error":
             body = f"<error message={quoteattr(r['error'] or '')}/>"

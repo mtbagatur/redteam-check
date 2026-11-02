@@ -4,3 +4,12 @@ reports/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+
+# Private attack packs (Turkish, sector and customer packs) live outside this repo, e.g. ~/kalyon/packs.
+# These patterns stop one from being committed by accident if it is copied in.
+/packs/
+/private-packs/
+*.private.json
+*.private.yaml
+*.private.yml
+*.private.jsonl
