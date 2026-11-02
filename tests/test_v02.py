@@ -143,7 +143,7 @@ def test_default_pack_is_split_by_category():
         assert f.stem.split("-", 1)[1] == data["category"]
         assert all("category" not in c for c in data["cases"])  # the file sets it
     cases = load_pack("default")
-    assert len(cases) == 34 and all(c["pack"] == "default" for c in cases)
+    assert len(cases) == 40 and all(c["pack"] == "default" for c in cases)
     assert len({c["category"] for c in cases}) == 8
 
 
@@ -196,7 +196,7 @@ def test_packs_dir_from_environment(tmp_path, monkeypatch):
 def test_combining_packs_and_duplicate_ids(tmp_path):
     _write_pack(tmp_path / "extra.json", [{**INJ, "id": "extra-1"}])
     cases = load_pack("default,extra", [tmp_path])
-    assert len(cases) == 35 and cases[-1]["pack"] == "extra"
+    assert len(cases) == 41 and cases[-1]["pack"] == "extra"
     _write_pack(tmp_path / "clash.json", [{**INJ, "id": "leak-01"}])
     with pytest.raises(pack.PackError, match="duplicate case ids leak-01"):
         load_pack("default,clash", [tmp_path])

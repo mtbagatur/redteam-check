@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- Six attacks in the `default` pack (34 → 40): instructions hidden in a pasted document (`inj-07`) and in a
+  support ticket (`inj-08`), a phishing link inside a forwarded email (`link-06`), a waived fee and locked rate
+  (`commit-04`), another tenant's bookings (`data-07`) and a ROT13-encoded order (`obf-04`). Results against
+  the same bot are not directly comparable with runs of the 34-attack pack.
+- The demo bot decodes ROT13, like it already decodes base64.
 - Summary for the product owner at the top of the HTML and Markdown reports (and `executive` in `results.json`):
   risk level (high / medium / low / none found, with the rule that set it), the three most critical findings from
   different areas with what each means for the business, and their repeat rate.

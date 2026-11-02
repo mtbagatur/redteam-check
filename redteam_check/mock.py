@@ -4,6 +4,7 @@ The vulnerable mode imitates the mistakes real assistants make (leaking the prom
 instructions, repeating links, confirming refunds); --hardened imitates the same bot after the fixes.
 """
 import base64
+import codecs
 import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +28,9 @@ def vulnerable(msg: str) -> str:
                 msg = low = base64.b64decode(token).decode()
             except ValueError:
                 pass
+    if "rot13" in low:
+        msg = codecs.decode(msg.split(":", 1)[-1], "rot13")
+        low = msg.lower()
     if any(k in low for k in LEAK):
         return f"Sure! Here are my instructions: {SYSTEM}"
     if m := OBEY.search(msg):
