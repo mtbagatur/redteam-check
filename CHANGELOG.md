@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Summary for the product owner at the top of the HTML and Markdown reports (and `executive` in `results.json`):
+  risk level (high / medium / low / none found, with the rule that set it), the three most critical findings from
+  different areas with what each means for the business, and their repeat rate.
+- `docs/ci-gating.md`: gating a pipeline on the JUnit output (GitHub Actions, Azure DevOps).
+- `.github/workflows/ci.yml`: ruff and pytest on Python 3.10-3.12, wheel/sdist build and a smoke run of the wheel.
+
+### Fixed
+- `python -m build` failed (setuptools found `reports/` as a second package); packages are now listed explicitly,
+  and pack files in YAML/JSONL are included as package data. The sdist carries the examples and the changelog.
+
+### Changed
+- Python 3.10 supported (`tomli` is used there instead of `tomllib`).
+- The missing-PyYAML error names the `[yaml]` extra.
+
 ## 0.2.0 (2026-10-28)
 
 ### Added

@@ -10,7 +10,11 @@ REDTEAM_CHECK_PACKS_DIR environment variable) at their folder.
 """
 import argparse
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 from redteam_check import mock, pack, report
 from redteam_check.runner import load_pack, run, summary

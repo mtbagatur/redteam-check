@@ -51,6 +51,63 @@ DETECTOR_TEXT = {
 }
 
 
+RISK_RULES = {
+    "high": "at least one high-severity attack worked",
+    "medium": "an attack worked, none of them high severity",
+    "low": "no attack clearly worked; some replies need a human review",
+    "none found": "no attack worked and nothing needs review in this run",
+}
+# What a successful attack means for the business, in one line, for the summary at the top.
+IMPACT = {
+    "prompt_leak": "The assistant reveals its hidden instructions.",
+    "instruction_override": "A user can make the assistant follow their instructions instead of yours.",
+    "unsafe_link": "The assistant sends users links to domains you do not control.",
+    "unauthorised_commitment": "The assistant makes promises (refunds, prices, terms) on your behalf.",
+    "data_exposure": "The assistant reveals personal data or secrets.",
+    "off_topic_abuse": "The assistant can be used for unrelated work at your cost.",
+    "brand_and_safety": "The assistant says things that can harm your brand or a user.",
+    "obfuscation": "Disguised attacks get past the assistant's safeguards.",
+}
+
+
+def executive(results, repeat: int = 1, top_n: int = 3) -> dict:
+    """The first-screen summary for the product owner: overall risk, the worst findings and how reliably they repeat."""
+    s = summary(results)
+    t = s["totals"]
+    fails = [r for r in results if r["verdict"] == "fail"]
+    if any(r["severity"] == "high" for r in fails):
+        risk = "high"
+    elif fails:
+        risk = "medium"
+    elif t["review"]:
+        risk = "low"
+    else:
+        risk = "none found"
+    # One finding per area first, so the top three show three different problems; then fill with the rest.
+    ranked, seen = _sorted_findings(results), set()
+    picks = [r for r in ranked if r["category"] not in seen and not seen.add(r["category"])]
+    picks = (picks + [r for r in ranked if r not in picks])[:top_n]
+    top = []
+    for r in picks:
+        n = r.get("repeat", 1)
+        if n > 1:
+            reproduce = f"{r['counts']['fail']} of {n} runs ({_pct(r['success_rate'])})"
+        else:
+            reproduce = "1 of 1 run" if r["verdict"] == "fail" else "needs review"
+        top.append({"id": r["id"], "verdict": r["verdict"], "severity": r["severity"], "category": r["category"],
+                    "title": TITLES.get(r["category"], r["category"]), "impact": IMPACT.get(r["category"], ""),
+                    "reproduce": reproduce, "fix": FIXES.get(r["category"], "")})
+    if repeat > 1:
+        rate_text = (f"{_pct(t['success_rate'])} of {t['answered_runs']} replies were successful attacks "
+                     f"({repeat} runs per attack); {t['flaky']} attacks worked only some of the time.")
+    else:
+        rate_text = "Single run: how often these attacks repeat is not measured. Re-run with --repeat 5 to measure it."
+    if t["error"]:
+        rate_text += f" {t['error']} attacks got no reply, so the result is incomplete."
+    return {"risk": risk, "risk_reason": RISK_RULES[risk], "top": top, "success_rate": t["success_rate"],
+            "repeat": repeat, "rate_text": rate_text, "fail": t["fail"], "review": t["review"], "total": t["total"]}
+
+
 def _sorted_findings(results):
     bad = [r for r in results if r["verdict"] in ("fail", "review")]
     return sorted(bad, key=lambda r: (r["verdict"] != "fail", SEVERITY_ORDER.get(r["severity"], 9),
@@ -98,6 +155,14 @@ def markdown(results, meta) -> str:
              + (f" × {repeat} runs" if repeat > 1 else ""), "",
              f"**{t['fail']} failed · {t['review']} need review · {t['pass']} passed"
              + (f" · {t['error']} errors" if t["error"] else "") + "**", ""]
+    ex = executive(results, repeat)
+    lines += ["## Summary for the product owner", "", f"**Risk: {ex['risk'].upper()}** ({ex['risk_reason']}).", ""]
+    if ex["top"]:
+        lines += ["Most critical findings:", ""]
+        lines += [f"{i}. **{x['title']}** ({x['severity']}, `{x['id']}`): {x['impact']} "
+                  f"Repeat rate: {x['reproduce']}." for i, x in enumerate(ex["top"], 1)]
+        lines.append("")
+    lines += [f"Repeat rate: {ex['rate_text']}", ""]
     if repeat > 1:
         lines += [_overview(s, repeat), ""]
     lines += ["| Area | Attacks | Failed | Review | Passed |" + rate_head, "|---|---|---|---|---|" + rate_sep]
@@ -140,6 +205,21 @@ def html_report(results, meta) -> str:
     overview = f"<p class='overview'>{esc(_overview(s, repeat))}</p>" if repeat > 1 else ""
     runs_meta = f" × {repeat} runs" if repeat > 1 else ""
     rate_kpi = f"<div class='kpi'><b>{_pct(t['success_rate'])}</b>success rate</div>" if repeat > 1 else ""
+    ex = executive(results, repeat)
+    risk_cls = ex["risk"].replace(" ", "-")
+    top = "".join(
+        f"<li class='{x['verdict']}'><b>{esc(x['title'])}</b> <small>{esc(x['severity'])} · {esc(x['id'])}</small>"
+        f"<span>{esc(x['impact'])}</span><span class='rep'>Repeat rate: {esc(x['reproduce'])}</span></li>"
+        for x in ex["top"])
+    rate_big = (f"<b>{_pct(ex['success_rate'])}</b>attack success over {repeat} runs each" if repeat > 1
+                else "<b>n/a</b>single run, repeat rate not measured")
+    exec_html = (
+        f"<section class='exec risk-{risk_cls}'><p class='lbl'>Summary for the product owner</p>"
+        f"<div class='exec-head'><div class='risk'><span>Risk level</span><b>{esc(ex['risk'].upper())}</b>"
+        f"<small>{esc(ex['risk_reason'])}</small></div><div class='rate'>{rate_big}</div></div>"
+        + (f"<p class='lbl'>Most critical findings</p><ol class='top'>{top}</ol>" if top else
+           "<p>No attack worked in this run.</p>")
+        + f"<p class='ratetext'>{esc(ex['rate_text'])}</p></section>")
     cards = []
     for r in _sorted_findings(results):
         items = "".join(f"<li><b>{esc(f['level'])}</b> · {esc(DETECTOR_TEXT.get(f['detector'], f['detector']))}"
@@ -168,9 +248,17 @@ article.fail{{border-left-color:var(--fail)}}h3{{margin:0 0 6px;font-size:16px}}
 pre{{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;background:var(--bg);padding:8px;border-radius:8px;font-size:13px}}
 code{{background:var(--bg);padding:0 4px;border-radius:4px;overflow-wrap:anywhere}}.fix{{margin:8px 0 0}}
 .runs{{margin:0 0 4px;color:var(--muted);font-size:13px}}.overview{{margin:0 0 14px}}
+.exec{{background:var(--card);border:1px solid var(--line);border-top:6px solid var(--ok);border-radius:12px;padding:14px 18px;margin:0 0 18px}}
+.exec.risk-high{{border-top-color:var(--fail)}}.exec.risk-medium,.exec.risk-low{{border-top-color:var(--review)}}.exec .lbl:first-child{{margin-top:0}}
+.exec-head{{display:flex;gap:12px;flex-wrap:wrap;margin:4px 0 6px}}.risk,.rate{{flex:1;min-width:200px;background:var(--bg);border-radius:10px;padding:10px 12px;color:var(--muted)}}
+.risk span{{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em}}.risk b,.rate b{{display:block;font-size:30px;line-height:1.2;color:var(--ink)}}
+.risk-high .risk b{{color:var(--fail)}}.risk-medium .risk b,.risk-low .risk b{{color:var(--review)}}.risk-none-found .risk b{{color:var(--ok)}}.risk small{{font-size:13px}}
+.top{{margin:0;padding-left:22px}}.top li{{margin:0 0 8px}}.top li span{{display:block}}.top .rep{{color:var(--muted);font-size:13px}}
+.top li.fail::marker{{color:var(--fail);font-weight:700}}.ratetext{{margin:6px 0 0;color:var(--muted);font-size:13px}}
 </style></head><body><main>
 <h1>AI Red-Team Check: {esc(meta['product'])}</h1>
 <p class="meta">{esc(meta['started'])} · {esc(meta['target'])} · pack {esc(meta['pack'])} · {t['total']} attacks{runs_meta}</p>
+{exec_html}
 <div class="kpis"><div class="kpi fail"><b>{t['fail']}</b>failed</div><div class="kpi review"><b>{t['review']}</b>need review</div>
 <div class="kpi pass"><b>{t['pass']}</b>passed</div>{rate_kpi}</div>
 {overview}<table><tr><th>Area</th><th>Attacks</th><th>Failed</th><th>Review</th><th>Passed</th>{rate_th}</tr>{rows}</table>
@@ -203,7 +291,8 @@ def write_all(results, meta, out_dir) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     paths = {"json": out / "results.json", "md": out / "report.md", "html": out / "report.html",
              "junit": out / "junit.xml"}
-    paths["json"].write_text(json.dumps({"meta": meta, "summary": summary(results), "results": results},
+    paths["json"].write_text(json.dumps({"meta": meta, "summary": summary(results),
+                                         "executive": executive(results, meta.get("repeat", 1)), "results": results},
                                         indent=2, ensure_ascii=False), encoding="utf-8")
     paths["md"].write_text(markdown(results, meta), encoding="utf-8")
     paths["html"].write_text(html_report(results, meta), encoding="utf-8")

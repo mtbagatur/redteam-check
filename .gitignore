@@ -13,3 +13,5 @@ reports/
 *.private.yaml
 *.private.yml
 *.private.jsonl
+dist/
+build/

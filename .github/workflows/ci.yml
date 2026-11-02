@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev,yaml]"
+      - name: Ruff
+        run: ruff check .
+      - name: Pytest
+        run: pytest -q
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install build
+          python -m build
+      - name: Check the wheel ships the built-in pack
+        run: python -c "import sys, zipfile, glob; n = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist(); sys.exit(0 if any(p.startswith('redteam_check/packs/default/') for p in n) else 'default pack missing from wheel')"
+      - name: Smoke test the wheel in a clean venv against the local demo bot
+        run: |
+          python -m venv /tmp/rtc
+          /tmp/rtc/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/rtc/bin/redteam-check packs
+          /tmp/rtc/bin/redteam-check mock --port 8787 &
+          sleep 2
+          # The demo bot is vulnerable on purpose, so findings (exit 1) are expected; anything else is a real error.
+          set +e
+          /tmp/rtc/bin/redteam-check run -c "$GITHUB_WORKSPACE/examples/demo.toml" -o /tmp/rtc-report -q
+          code=$?
+          set -e
+          kill %1
+          test "$code" -eq 1 && test -s /tmp/rtc-report/junit.xml && test -s /tmp/rtc-report/report.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

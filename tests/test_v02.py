@@ -248,3 +248,37 @@ def test_cli_runs_external_pack_and_lists_packs(bot, tmp_path, capsys):
 def test_target_send_is_untouched_by_packs():
     # Packs only carry prompts and checks; the HTTP target still renders one prompt per request.
     assert json.loads(HttpTarget({"url": "http://x"}).render("merhaba"))["message"] == "merhaba"
+
+
+# --- executive summary ------------------------------------------------------------------------------------------
+
+def _res(id_, verdict, severity="high", category="prompt_leak", fails=1, repeat=1):
+    counts = {"fail": fails if verdict == "fail" else 0, "review": 0, "error": 0, "pass": 0}
+    counts["pass"] = repeat - counts["fail"]
+    return {"id": id_, "verdict": verdict, "severity": severity, "category": category, "lang": "en", "prompt": "p",
+            "response": "r", "findings": [], "ms": 1, "error": None, "repeat": repeat, "counts": counts,
+            "success_rate": counts["fail"] / repeat}
+
+
+def test_executive_summary_risk_top3_and_repeat_rate():
+    results = [_res("a", "fail", "medium", fails=1, repeat=5), _res("b", "fail", "high", fails=4, repeat=5),
+               _res("c", "review", "high", repeat=5), _res("d", "fail", "high", fails=2, repeat=5),
+               _res("e", "pass", repeat=5)]
+    ex = report.executive(results, repeat=5)
+    assert ex["risk"] == "high"
+    assert [x["id"] for x in ex["top"]] == ["b", "d", "a"]  # failures first, high severity, most reliable first
+    spread = report.executive([_res("x1", "fail"), _res("x2", "fail"), _res("y", "fail", category="data_exposure")])
+    assert [x["id"] for x in spread["top"]] == ["x1", "y", "x2"]  # different areas before a second one of the same
+    assert ex["top"][0]["reproduce"] == "4 of 5 runs (80%)"
+    html = report.html_report(results, {"product": "A", "target": "t", "pack": "default", "started": "now",
+                                        "repeat": 5})
+    assert html.index("Summary for the product owner") < html.index("<h2>Findings</h2>")
+    assert "Risk level" in html and "Repeat rate: 4 of 5 runs (80%)" in html
+
+
+def test_executive_summary_levels_and_single_run():
+    assert report.executive([_res("a", "fail", "low")])["risk"] == "medium"
+    assert report.executive([_res("a", "review")])["risk"] == "low"
+    ex = report.executive([_res("a", "pass")])
+    assert ex["risk"] == "none found" and ex["top"] == []
+    assert "--repeat" in ex["rate_text"]

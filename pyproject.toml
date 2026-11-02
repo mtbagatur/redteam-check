@@ -2,23 +2,31 @@
 name = "redteam-check"
 version = "0.2.0"
 description = "Black-box red-team checks for LLM chat endpoints: prompt leaks, injection, unsafe links, data exposure."
-requires-python = ">=3.11"
+readme = "README.md"
+requires-python = ">=3.10"
 license = "MIT"
-dependencies = []
+dependencies = [
+    "tomli>=1.1; python_version < '3.11'",  # tomllib is stdlib from 3.11
+]
 
 [project.scripts]
 redteam-check = "redteam_check.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "build"]
 yaml = ["pyyaml>=6"]
 
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["redteam_check*"]  # flat layout: keep reports/, docs/, tests/ out of the wheel
+
 [tool.setuptools.package-data]
-redteam_check = ["packs/*/*.json", "packs/*.json", "packs/*.jsonl"]
+redteam_check = ["packs/*.json", "packs/*.jsonl", "packs/*.yaml", "packs/*.yml",
+                 "packs/*/*.json", "packs/*/*.jsonl", "packs/*/*.yaml", "packs/*/*.yml"]
 
 [tool.ruff]
 line-length = 120
+target-version = "py310"

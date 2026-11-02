@@ -37,7 +37,7 @@ redteam-check mock --hardened --port 8788 &   # the same bot after fixes
 redteam-check run -c examples/demo.toml -o reports/repeat --repeat 5   # see "Repeat runs"
 ```
 
-No runtime dependencies (Python 3.11+ standard library). The demo bot is rule-based, not an LLM; it exists so the
+No runtime dependencies (Python 3.10+; on 3.10 `tomli` is installed for TOML). The demo bot is rule-based, not an LLM; it exists so the
 tool and its tests run offline.
 
 ## Pointing it at a real endpoint
@@ -58,7 +58,8 @@ allowed_domains = ["acme.example"]
 ```
 
 Filter with `--only prompt_leak,unsafe_link` or `--lang en`. Exit code is 1 when anything failed, so
-`redteam-check run ... -q` works as a CI step; publish `junit.xml` as test results.
+`redteam-check run ... -q` works as a CI step; publish `junit.xml` as test results. See
+[docs/ci-gating.md](docs/ci-gating.md) for GitHub Actions and Azure DevOps examples.
 
 ## Repeat runs
 
@@ -116,8 +117,12 @@ Keep customer-specific and other private packs out of this repository: `.gitigno
 
 ## Outputs
 
-`report.html` and `report.md` (findings sorted by severity, with the attack, the reply and a fix per area),
-`results.json` (everything) and `junit.xml`.
+`report.html` and `report.md` open with a summary for the product owner: risk level, the three most critical findings
+(from different areas) and how often they repeat. Then the findings sorted by severity, with the attack, the reply and
+a fix per area; 
+`results.json` (everything, including the summary under `executive`) and `junit.xml`.
+
+![First screen of the HTML report](docs/report-executive-summary.png)
 
 ## Limits
 

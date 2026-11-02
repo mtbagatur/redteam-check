@@ -43,7 +43,7 @@ def _parse_yaml(text: str, path: pathlib.Path):
         try:
             return json.loads(stripped)
         except ValueError as e:
-            raise PackError(f"{path}: install PyYAML (pip install pyyaml) to read block-style YAML ({e})") from e
+            raise PackError(f"{path}: install PyYAML (pip install 'redteam-check[yaml]') to read block-style YAML ({e})") from e
     return yaml.safe_load(text)
 
 
