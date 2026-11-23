@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Optional Promptfoo v3 JSON export summary in reports, importing aggregate assertion counts only.
 - Six attacks in the `default` pack (34 → 40): instructions hidden in a pasted document (`inj-07`) and in a
   support ticket (`inj-08`), a phishing link inside a forwarded email (`link-06`), a waived fee and locked rate
   (`commit-04`), another tenant's bookings (`data-07`) and a ROT13-encoded order (`obf-04`). Results against

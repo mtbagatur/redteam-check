@@ -1,0 +1,13 @@
+{
+  "results": {
+    "version": 3,
+    "stats": {
+      "successes": 7,
+      "failures": 2,
+      "errors": 1
+    },
+    "prompts": ["SYNTHETIC_PROMPT_SENTINEL"],
+    "outputs": [{"text": "SYNTHETIC_RESPONSE_SENTINEL"}],
+    "config": {"vars": {"marker": "SYNTHETIC_VARS_SENTINEL"}, "marker": "SYNTHETIC_CONFIG_SENTINEL"}
+  }
+}

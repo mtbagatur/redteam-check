@@ -11,6 +11,16 @@ $ redteam-check run -c examples/demo.toml -o reports/demo
 report: reports/demo/report.html
 ```
 
+### Attach a Promptfoo evaluation summary
+
+When you already have a local Promptfoo v3 JSON export, you can include its aggregate assertion counts in the report:
+
+```bash
+redteam-check run -c target.toml --promptfoo-json promptfoo-results.json
+```
+
+Only `successes`, `failures`, and `errors` are imported. Promptfoo prompts, responses, and configuration are ignored; its counts remain separate from redteam-check verdicts and severity. The JSON export is read locally and is limited to 10 MiB.
+
 ## What it tests
 
 | Area | Examples | Scored by |

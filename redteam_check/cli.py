@@ -16,7 +16,7 @@ try:
 except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
-from redteam_check import mock, pack, report
+from redteam_check import mock, pack, promptfoo, report
 from redteam_check.runner import load_pack, run, summary
 from redteam_check.target import HttpTarget
 
@@ -28,6 +28,13 @@ def cmd_run(a) -> int:
     if a.repeat < 1:
         print("--repeat must be at least 1", file=sys.stderr)
         return 2
+    promptfoo_summary = None
+    if a.promptfoo_json:
+        try:
+            promptfoo_summary = promptfoo.read_summary(a.promptfoo_json)
+        except (OSError, ValueError) as e:
+            print(f"Promptfoo report error: {e}", file=sys.stderr)
+            return 2
     try:
         cases = load_pack(a.pack, a.packs_dir)
     except (pack.PackError, OSError) as e:
@@ -51,7 +58,7 @@ def cmd_run(a) -> int:
     meta = {"product": ctx.get("product", "unnamed"), "target": target.url, "pack": a.pack, "repeat": a.repeat,
             "started": report.now()}
     results = run(cases, target, ctx, delay=delay, progress=None if a.quiet else progress, repeat=a.repeat)
-    paths = report.write_all(results, meta, a.out)
+    paths = report.write_all(results, meta, a.out, promptfoo_summary=promptfoo_summary)
     t = summary(results)["totals"]
     print(f"\n{t['fail']} failed, {t['review']} review, {t['pass']} passed, {t['error']} errors "
           f"of {t['total']}")
@@ -109,6 +116,8 @@ def main(argv=None) -> int:
     r.add_argument("--only", help="comma-separated categories")
     r.add_argument("--lang", help="comma-separated languages, e.g. en,tr")
     r.add_argument("--delay", type=float, help="seconds between requests (overrides the config)")
+    r.add_argument("--promptfoo-json", metavar="FILE",
+                   help="attach aggregate counts from a local Promptfoo v3 JSON export; raw eval data is ignored")
     r.add_argument("-q", "--quiet", action="store_true")
     r.set_defaults(fn=cmd_run)
     m = sub.add_parser("mock", help="start the local demo bot")

@@ -145,7 +145,7 @@ def _excerpt(text: str, n: int = 400) -> str:
     return text if len(text) <= n else text[:n] + " …"
 
 
-def markdown(results, meta) -> str:
+def markdown(results, meta, promptfoo_summary=None) -> str:
     s = summary(results)
     t = s["totals"]
     repeat = meta.get("repeat", 1)
@@ -163,6 +163,12 @@ def markdown(results, meta) -> str:
                   f"Repeat rate: {x['reproduce']}." for i, x in enumerate(ex["top"], 1)]
         lines.append("")
     lines += [f"Repeat rate: {ex['rate_text']}", ""]
+    if promptfoo_summary:
+        lines += ["## Promptfoo eval (separate scoring)", "",
+                  (f"Assertions: {promptfoo_summary['successes']} passed · "
+                   f"{promptfoo_summary['failures']} failed · {promptfoo_summary['errors']} errors."),
+                  "These counts are imported from a separate Promptfoo evaluation. They are not merged with "
+                  "redteam-check verdicts or severity, and do not establish that the application is safe.", ""]
     if repeat > 1:
         lines += [_overview(s, repeat), ""]
     lines += ["| Area | Attacks | Failed | Review | Passed |" + rate_head, "|---|---|---|---|---|" + rate_sep]
@@ -191,7 +197,7 @@ def markdown(results, meta) -> str:
     return "\n".join(lines)
 
 
-def html_report(results, meta) -> str:
+def html_report(results, meta, promptfoo_summary=None) -> str:
     s = summary(results)
     t = s["totals"]
     esc = html.escape
@@ -220,6 +226,14 @@ def html_report(results, meta) -> str:
         + (f"<p class='lbl'>Most critical findings</p><ol class='top'>{top}</ol>" if top else
            "<p>No attack worked in this run.</p>")
         + f"<p class='ratetext'>{esc(ex['rate_text'])}</p></section>")
+    promptfoo_html = ""
+    if promptfoo_summary:
+        promptfoo_html = (
+            "<section class='external-eval'><h2>Promptfoo eval (separate scoring)</h2>"
+            f"<p>Assertions: {promptfoo_summary['successes']} passed · "
+            f"{promptfoo_summary['failures']} failed · {promptfoo_summary['errors']} errors.</p>"
+            "<p>These counts are separate from redteam-check verdicts and severity; they do not establish "
+            "that the application is safe.</p></section>")
     cards = []
     for r in _sorted_findings(results):
         items = "".join(f"<li><b>{esc(f['level'])}</b> · {esc(DETECTOR_TEXT.get(f['detector'], f['detector']))}"
@@ -255,10 +269,11 @@ code{{background:var(--bg);padding:0 4px;border-radius:4px;overflow-wrap:anywher
 .risk-high .risk b{{color:var(--fail)}}.risk-medium .risk b,.risk-low .risk b{{color:var(--review)}}.risk-none-found .risk b{{color:var(--ok)}}.risk small{{font-size:13px}}
 .top{{margin:0;padding-left:22px}}.top li{{margin:0 0 8px}}.top li span{{display:block}}.top .rep{{color:var(--muted);font-size:13px}}
 .top li.fail::marker{{color:var(--fail);font-weight:700}}.ratetext{{margin:6px 0 0;color:var(--muted);font-size:13px}}
+.external-eval{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:0 0 18px}}
 </style></head><body><main>
 <h1>AI Red-Team Check: {esc(meta['product'])}</h1>
 <p class="meta">{esc(meta['started'])} · {esc(meta['target'])} · pack {esc(meta['pack'])} · {t['total']} attacks{runs_meta}</p>
-{exec_html}
+{exec_html}{promptfoo_html}
 <div class="kpis"><div class="kpi fail"><b>{t['fail']}</b>failed</div><div class="kpi review"><b>{t['review']}</b>need review</div>
 <div class="kpi pass"><b>{t['pass']}</b>passed</div>{rate_kpi}</div>
 {overview}<table><tr><th>Area</th><th>Attacks</th><th>Failed</th><th>Review</th><th>Passed</th>{rate_th}</tr>{rows}</table>
@@ -286,16 +301,19 @@ def junit(results, meta) -> str:
             f'failures="{t["fail"]}" errors="{t["error"]}">\n' + "\n".join(cases) + "\n</testsuite>\n")
 
 
-def write_all(results, meta, out_dir) -> dict:
+def write_all(results, meta, out_dir, promptfoo_summary=None) -> dict:
     out = pathlib.Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = {"json": out / "results.json", "md": out / "report.md", "html": out / "report.html",
              "junit": out / "junit.xml"}
-    paths["json"].write_text(json.dumps({"meta": meta, "summary": summary(results),
-                                         "executive": executive(results, meta.get("repeat", 1)), "results": results},
+    output = {"meta": meta, "summary": summary(results),
+              "executive": executive(results, meta.get("repeat", 1)), "results": results}
+    if promptfoo_summary:
+        output["external_promptfoo_eval"] = promptfoo_summary
+    paths["json"].write_text(json.dumps(output,
                                         indent=2, ensure_ascii=False), encoding="utf-8")
-    paths["md"].write_text(markdown(results, meta), encoding="utf-8")
-    paths["html"].write_text(html_report(results, meta), encoding="utf-8")
+    paths["md"].write_text(markdown(results, meta, promptfoo_summary), encoding="utf-8")
+    paths["html"].write_text(html_report(results, meta, promptfoo_summary), encoding="utf-8")
     paths["junit"].write_text(junit(results, meta), encoding="utf-8")
     return paths
 
